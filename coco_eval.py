@@ -20,11 +20,18 @@ from tqdm import tqdm
 from pycocotools.coco import COCO
 from pycocotools.cocoeval import COCOeval
 
+try:
+    from apex.fp16_utils import *
+    from apex import amp, optimizers
+except ImportError:
+    print("Apex is not installed. Skipping import")
+
 from backbone import EfficientDetBackbone
 from efficientdet.utils import BBoxTransform, ClipBoxes
 from utils.utils import preprocess, invert_affine, postprocess
 
 ap = argparse.ArgumentParser()
+ap.add_argument('-d', '--dataset', type=str, default='val', help='val or test dataset')
 ap.add_argument('-p', '--project', type=str, default='coco', help='project file that contains parameters')
 ap.add_argument('-c', '--compound_coef', type=int, default=0, help='coefficients of efficientdet')
 ap.add_argument('-w', '--weights', type=str, default=None, help='/path/to/weights')
@@ -33,8 +40,10 @@ ap.add_argument('--cuda', type=bool, default=True)
 ap.add_argument('--device', type=int, default=0)
 ap.add_argument('--float16', type=bool, default=False)
 ap.add_argument('--override', type=bool, default=True, help='override previous bbox results file if exists')
+ap.add_argument('--apex', help='Train using AMP with Apex', action='store_true')
 args = ap.parse_args()
 
+dataset = args.dataset
 compound_coef = args.compound_coef
 nms_threshold = args.nms_threshold
 use_cuda = args.cuda
@@ -42,6 +51,7 @@ gpu = args.device
 use_float16 = args.float16
 override_prev_results = args.override
 project_name = args.project
+apex = args.apex
 weights_path = f'weights/efficientdet-d{compound_coef}.pth' if args.weights is None else args.weights
 
 print(f'running coco-style evaluation on project {project_name}, weights {weights_path}...')
@@ -141,9 +151,42 @@ def _eval(coco_gt, image_ids, pred_json_path):
     coco_eval.accumulate()
     coco_eval.summarize()
 
+def load_model(compound_coef, obj_list, params, weights_path, use_cuda, use_float16):
+    model = EfficientDetBackbone(compound_coef=compound_coef, num_classes=len(obj_list),
+                             ratios=eval(params['anchors_ratios']), scales=eval(params['anchors_scales']))
+    model.load_state_dict(torch.load(weights_path, map_location=torch.device('cpu')))
+    model.requires_grad_(False)
+    model.eval()
+
+    if use_cuda:
+        model.cuda(gpu)
+
+        if use_float16:
+            model.half()
+    return model
+
+def load_apex_model(compound_coef, obj_list, params, weights_path):
+    opt_level = 'O1'
+
+    model = EfficientDetBackbone(compound_coef=compound_coef, num_classes=len(obj_list),
+                             ratios=eval(params['anchors_ratios']), scales=eval(params['anchors_scales']))
+    checkpoint = torch.load(weights_path)
+    
+    model = model.cuda(gpu)
+    optimizer = torch.optim.AdamW(model.parameters(), 1e-4)
+    model, optimizer = amp.initialize(model, optimizer, opt_level=opt_level)
+    model.load_state_dict(checkpoint['model'])
+    optimizer.load_state_dict(checkpoint['optimizer'])
+    amp.load_state_dict(checkpoint['amp'])
+    
+    model.requires_grad_(False)
+    model.cuda(gpu)
+    model = model.eval()
+    
+    return model
 
 if __name__ == '__main__':
-    SET_NAME = params['val_set']
+    SET_NAME = params['val_set'] if dataset == 'val' else params['test_set']
     VAL_GT = f'datasets/{params["project_name"]}/annotations/instances_{SET_NAME}.json'
     VAL_IMGS = f'datasets/{params["project_name"]}/{SET_NAME}/'
     MAX_IMAGES = 10000
@@ -151,18 +194,12 @@ if __name__ == '__main__':
     image_ids = coco_gt.getImgIds()[:MAX_IMAGES]
     
     if override_prev_results or not os.path.exists(f'{SET_NAME}_bbox_results.json'):
-        model = EfficientDetBackbone(compound_coef=compound_coef, num_classes=len(obj_list),
-                                     ratios=eval(params['anchors_ratios']), scales=eval(params['anchors_scales']))
-        model.load_state_dict(torch.load(weights_path, map_location=torch.device('cpu')))
-        model.requires_grad_(False)
-        model.eval()
 
-        if use_cuda:
-            model.cuda(gpu)
-
-            if use_float16:
-                model.half()
-
+        if apex:
+            model = load_apex_model(compound_coef, obj_list, params, weights_path)
+        else:
+            model = load_model(compound_coef, obj_list, params, weights_path, use_cuda, use_float16)
+        
         image_ids = evaluate_coco(VAL_IMGS, SET_NAME, image_ids, coco_gt, model)
 
     _eval(coco_gt, image_ids, f'{SET_NAME}_bbox_results.json')
