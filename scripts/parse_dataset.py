@@ -21,7 +21,7 @@ VALID_INPUT_SIZES = [512, 640, 768, 896, 1024, 1280, 1536]
 parser = argparse.ArgumentParser(description='Split dataset and regenerate annotations')
 parser.add_argument('-d', '--dataset', required=True, type=str, help='id of the dataset you wish to parse')
 parser.add_argument('-is', '--input_size', required=True, type=int, help="input size of the dataset's images (width == height)")
-parser.add_argument('-s', '--split', type=int, nargs=3, default=[90,10,0], metavar=('test', 'val', 'test'), help='split datasets into train val test. Default: 90 10 0')
+parser.add_argument('-s', '--split', type=int, nargs=3, default=[90,10,0], metavar=('train', 'val', 'test'), help='split datasets into train val test. Default: 90 10 0')
 args = parser.parse_args()
 
 DATASET_ID = args.dataset
