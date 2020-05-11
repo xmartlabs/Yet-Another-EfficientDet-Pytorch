@@ -41,6 +41,7 @@ ap.add_argument('--device', type=int, default=0)
 ap.add_argument('--float16', type=bool, default=False)
 ap.add_argument('--override', type=bool, default=True, help='override previous bbox results file if exists')
 ap.add_argument('--apex', help='Train using AMP with Apex', action='store_true')
+ap.add_arguments('--lr', type=float, default=1e-4, help='learning ratio used in apex training')
 args = ap.parse_args()
 
 dataset = args.dataset
@@ -52,6 +53,7 @@ use_float16 = args.float16
 override_prev_results = args.override
 project_name = args.project
 apex = args.apex
+lr = args.lr
 weights_path = f'weights/efficientdet-d{compound_coef}.pth' if args.weights is None else args.weights
 
 print(f'running coco-style evaluation on project {project_name}, weights {weights_path}...')
@@ -173,7 +175,7 @@ def load_apex_model(compound_coef, obj_list, params, weights_path):
     checkpoint = torch.load(weights_path)
     
     model = model.cuda(gpu)
-    optimizer = torch.optim.AdamW(model.parameters(), 1e-4)
+    optimizer = torch.optim.AdamW(model.parameters(), lr)
     model, optimizer = amp.initialize(model, optimizer, opt_level=opt_level)
     model.load_state_dict(checkpoint['model'])
     optimizer.load_state_dict(checkpoint['optimizer'])
