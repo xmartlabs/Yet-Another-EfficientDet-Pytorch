@@ -2,6 +2,13 @@
 
 The pytorch re-implement of the official [EfficientDet](https://github.com/google/automl/tree/master/efficientdet) with SOTA performance in real time, original paper link: https://arxiv.org/abs/1911.09070
 
+## Docker setup
+
+#### Build the image and name it cellar
+docker image build -t cellar .
+
+#### Run the container
+docker run -it --gpus all --shm-size=2gb --network host -v $(pwd):/workspace/src cellar
 
 # Performance
 
