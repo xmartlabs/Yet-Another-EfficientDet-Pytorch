@@ -41,7 +41,7 @@ ap.add_argument('--device', type=int, default=0)
 ap.add_argument('--float16', type=bool, default=False)
 ap.add_argument('--override', type=bool, default=True, help='override previous bbox results file if exists')
 ap.add_argument('--apex', help='Train using AMP with Apex', action='store_true')
-ap.add_arguments('--lr', type=float, default=1e-4, help='learning ratio used in apex training')
+ap.add_argument('--lr', type=float, default=1e-4, help='learning ratio used in apex training')
 args = ap.parse_args()
 
 dataset = args.dataset
